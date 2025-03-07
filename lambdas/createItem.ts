@@ -1,31 +1,43 @@
-import { APIGatewayProxyHandler } from 'aws-lambda';
-import * as AWS from 'aws-sdk';
-import * as uuid from 'uuid';
-import { apiResponses, validateRequiredFields } from '../shared/util';
+import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import { marshall } from "@aws-sdk/util-dynamodb";
+import { Item } from "../shared/types";
 
-const dynamoDB = new AWS.DynamoDB.DocumentClient();
-const TABLE_NAME = process.env.TABLE_NAME || '';
+const client = new DynamoDBClient({ region: process.env.REGION });
 
-export const handler: APIGatewayProxyHandler = async (event) => {
-  try {
-    if (!event.body) return apiResponses._400({ message: 'Missing request body' });
+export const handler = async (event: any) => {
+  const { partitionKey, sortKey, name, description, numericAttribute, booleanAttribute } = JSON.parse(event.body);
 
-    const body = JSON.parse(event.body);
-    const validationError = validateRequiredFields(body, ['partitionKey', 'description']);
-    if (validationError) return apiResponses._400({ message: validationError });
-
-    const item = {
-      partitionKey: body.partitionKey,
-      sortKey: uuid.v4(),
-      description: body.description,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+  if (!partitionKey || !sortKey || !name || !description) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: "Missing required fields" }),
     };
+  }
 
-    await dynamoDB.put({ TableName: TABLE_NAME, Item: item }).promise();
-    return apiResponses._200({ message: 'Item created successfully', item });
+  const item: Item = {
+    partitionKey,
+    sortKey,
+    name,
+    description,
+    numericAttribute,
+    booleanAttribute,
+  };
+
+  const params = {
+    TableName: process.env.TABLE_NAME,
+    Item: marshall(item),
+  };
+
+  try {
+    await client.send(new PutItemCommand(params));
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ message: "Item created successfully" }),
+    };
   } catch (error) {
-    console.error('Error creating item:', error);
-    return apiResponses._500({ message: 'Error creating item', error: (error as Error).message });
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "Failed to create item" }),
+    };
   }
 };
