@@ -40,16 +40,19 @@ export class Assignment1Stack extends cdk.Stack {
       requestItems[itemDetailsTable.tableName] = itemDetailsTableBatch;
     }
 
-    const seedDataFn = new lambda.Function(this, 'SeedDataFunction', {
+    const seedDataFn = new lambdanode.NodejsFunction(this, 'SeedDataFunction', {
+      entry: `${__dirname}/../seed/seed-lambda.ts`,
+      handler: "handler",
       runtime: lambda.Runtime.NODEJS_18_X,
-      handler: 'seed-lambda.handler',
-      code: lambda.Code.fromAsset('seed'),
       environment: {
         ITEMS_TABLE_NAME: itemsTable.tableName,
         DETAILS_TABLE_NAME: itemDetailsTable.tableName,
         REGION: cdk.Stack.of(this).region,
       },
       timeout: cdk.Duration.minutes(2),
+      bundling: {
+        forceDockerBundling: false, 
+      },
     });
 
     itemsTable.grantReadWriteData(seedDataFn);
