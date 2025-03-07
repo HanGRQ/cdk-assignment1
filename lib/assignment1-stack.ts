@@ -9,7 +9,6 @@ export class Assignment1Stack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // 创建 DynamoDB 表
     const table = new dynamodb.Table(this, 'ItemsTable', {
       partitionKey: { name: 'partitionKey', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'sortKey', type: dynamodb.AttributeType.STRING },
@@ -17,7 +16,6 @@ export class Assignment1Stack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY
     });
 
-    // 创建 Lambda 函数
     const getAllItemsLambda = new lambda.Function(this, 'GetAllItemsFunction', {
       runtime: lambda.Runtime.NODEJS_20_X,
       code: lambda.Code.fromAsset('lambdas'),
@@ -63,7 +61,6 @@ export class Assignment1Stack extends cdk.Stack {
       }
     });
 
-    // 授权 Lambda 访问 DynamoDB
     table.grantReadWriteData(createItemLambda);
     table.grantReadData(getAllItemsLambda);
     table.grantReadData(getItemByIdLambda);
@@ -79,7 +76,6 @@ export class Assignment1Stack extends cdk.Stack {
       }
     });
 
-    // 受保护的 API 密钥
     const apiKey = api.addApiKey('ApiKey');
     const usagePlan = api.addUsagePlan('UsagePlan', {
       name: 'UsagePlan',
@@ -87,7 +83,6 @@ export class Assignment1Stack extends cdk.Stack {
     });
     usagePlan.addApiKey(apiKey);
 
-    // API 资源
     const items = api.root.addResource('items');
     items.addMethod('POST', new apigateway.LambdaIntegration(createItemLambda), { apiKeyRequired: true });
     items.addMethod('GET', new apigateway.LambdaIntegration(getAllItemsLambda));
