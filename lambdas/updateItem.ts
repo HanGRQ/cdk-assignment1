@@ -1,5 +1,8 @@
-import { DynamoDBClient, UpdateItemCommand, ReturnValue } from "@aws-sdk/client-dynamodb";
-import { marshall } from "@aws-sdk/util-dynamodb";
+// lambdas/updateItem.ts
+import { DynamoDBClient, UpdateItemCommand, GetItemCommand, ReturnValue } from "@aws-sdk/client-dynamodb";
+import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
+import { Item } from "/opt/nodejs/shared/types";
+import { createResponse, handleError } from "/opt/nodejs/shared/utils";
 
 const client = new DynamoDBClient({ region: process.env.REGION });
 
@@ -9,19 +12,28 @@ export const handler = async (event: any) => {
     const sortKey = event.pathParameters?.sortKey;
     
     if (!partitionKey || !sortKey) {
-      return {
-        statusCode: 400,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*"
-        },
-        body: JSON.stringify({ error: "Partition key and sort key are required in the path" })
-      };
+      return createResponse(400, { error: "Partition key and sort key are required in the path" });
+    }
+    
+    // First, check if the item exists
+    const getParams = {
+      TableName: process.env.TABLE_NAME,
+      Key: marshall({
+        partitionKey,
+        sortKey
+      })
+    };
+    
+    const getResult = await client.send(new GetItemCommand(getParams));
+    
+    if (!getResult.Item) {
+      return createResponse(404, { error: "Item not found" });
     }
     
     const requestBody = JSON.parse(event.body || "{}");
     const { name, description, numericAttribute, booleanAttribute } = requestBody;
     
+    // Build update expression and attribute values
     let updateExpression = "SET";
     const expressionAttributeNames: {[key: string]: string} = {};
     const expressionAttributeValues: {[key: string]: any} = {};
@@ -50,64 +62,40 @@ export const handler = async (event: any) => {
       expressionAttributeValues[":booleanAttribute"] = { BOOL: booleanAttribute };
     }
     
-    // 添加 updatedAt 时间戳
+    // Always add updatedAt timestamp
     updateExpression += " #updatedAt = :updatedAt,";
     expressionAttributeNames["#updatedAt"] = "updatedAt";
     expressionAttributeValues[":updatedAt"] = { S: new Date().toISOString() };
     
-    // 移除最后一个逗号
+    // Remove trailing comma
     updateExpression = updateExpression.slice(0, -1);
     
     if (updateExpression === "SET") {
-      return {
-        statusCode: 400,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*"
-        },
-        body: JSON.stringify({ error: "No fields to update" })
-      };
+      return createResponse(400, { error: "No fields to update" });
     }
 
     const params = {
       TableName: process.env.TABLE_NAME,
-      Key: {
-        partitionKey: { S: partitionKey },
-        sortKey: { S: sortKey }
-      },
+      Key: marshall({
+        partitionKey,
+        sortKey
+      }),
       UpdateExpression: updateExpression,
       ExpressionAttributeNames: expressionAttributeNames,
       ExpressionAttributeValues: expressionAttributeValues,
-      ReturnValues: ReturnValue.ALL_NEW // 使用枚举而不是字符串
+      ReturnValues: ReturnValue.ALL_NEW
     };
 
     console.log("Update params:", JSON.stringify(params, null, 2));
     
     const result = await client.send(new UpdateItemCommand(params));
+    const updatedItem = unmarshall(result.Attributes || {}) as Item;
     
-    return {
-      statusCode: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*"
-      },
-      body: JSON.stringify({
-        message: "Item updated successfully",
-        item: result.Attributes
-      })
-    };
+    return createResponse(200, {
+      message: "Item updated successfully",
+      item: updatedItem
+    });
   } catch (error) {
-    console.error("Error updating item:", error);
-    return {
-      statusCode: 500,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*"
-      },
-      body: JSON.stringify({ 
-        error: "Failed to update item", 
-        details: String(error)
-      })
-    };
+    return handleError(error, "Failed to update item", process.env.NODE_ENV === 'development');
   }
 };

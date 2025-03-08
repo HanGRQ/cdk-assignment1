@@ -1,5 +1,5 @@
 // items.ts
-import { Item, ItemDetail } from "../shared/types";
+import { Item, ItemDetail } from "../layer/nodejs/shared/types";
 
 export const items: Item[] = [
   {
